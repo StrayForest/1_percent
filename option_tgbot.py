@@ -1,8 +1,7 @@
 import asyncio
 import logging
 import sys
-import numpy as np
-from scipy.stats import norm
+import math
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
@@ -16,13 +15,7 @@ from aiogram.types import (
     ReplyKeyboardRemove,
 )
 
-def black_scholes_call(S, X, T, r, sigma):
-    d1 = (np.log(S / X) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-    call_price = S * norm.cdf(d1) - X * np.exp(-r * T) * norm.cdf(d2)
-    return call_price
-
-TOKEN = "6878136453:AAGFt8JE2yhBSi9Z_105_bXcYeZK7eCsdB4"
+TOKEN = "YOUR_BOT_TOKEN_HERE"
 
 form_router = Router()
 
@@ -52,6 +45,7 @@ async def process_agree(message: Message, state: FSMContext) -> None:
         ),
     )
 
+
 @form_router.message(Form.agree, F.text.casefold() == "пошел вон")
 async def process_dont_agree(message: Message, state: FSMContext) -> None:
     await state.get_data()
@@ -60,6 +54,7 @@ async def process_dont_agree(message: Message, state: FSMContext) -> None:
         "Сам иди, дурачок",
         reply_markup=ReplyKeyboardRemove(),
     )
+
 
 @form_router.message(Form.agree, F.text.casefold() == "согласен")
 async def process_like_agree(message: Message, state: FSMContext) -> None:
@@ -70,9 +65,11 @@ async def process_like_agree(message: Message, state: FSMContext) -> None:
         reply_markup=ReplyKeyboardRemove(),
     )
 
+
 @form_router.message(Form.agree)
 async def process_unknown_write(message: Message) -> None:
     await message.reply("Отвечай по делу, чорт")
+
 
 @form_router.message(Form.S)
 async def process_S(message: Message, state: FSMContext) -> None:
@@ -84,6 +81,7 @@ async def process_S(message: Message, state: FSMContext) -> None:
         reply_markup=ReplyKeyboardRemove(),
     )
 
+
 @form_router.message(Form.X)
 async def process_X(message: Message, state: FSMContext) -> None:
     await state.update_data(X=message.text)
@@ -93,6 +91,7 @@ async def process_X(message: Message, state: FSMContext) -> None:
         "T - время до истечения срока действия опциона",
         reply_markup=ReplyKeyboardRemove(),
     )
+
 
 @form_router.message(Form.T)
 async def process_T(message: Message, state: FSMContext) -> None:
@@ -104,6 +103,7 @@ async def process_T(message: Message, state: FSMContext) -> None:
         reply_markup=ReplyKeyboardRemove(),
     )
 
+
 @form_router.message(Form.r)
 async def process_r(message: Message, state: FSMContext) -> None:
     await state.update_data(r=message.text)
@@ -113,18 +113,19 @@ async def process_r(message: Message, state: FSMContext) -> None:
         "sigma - волатильность базового актива",
         reply_markup=ReplyKeyboardRemove(),
     )
-    
+
+
 @form_router.message(Form.sigma)
 async def process_sigma(message: Message, state: FSMContext) -> None:
     await state.update_data(sigma=message.text)
 
     # Получаем данные из контекста FSM
     data = await state.get_data()
-    S = float(data.get('S'))  # Преобразуем значение из контекста в число
-    X = float(data.get('X'))
-    T = float(data.get('T'))
-    r = float(data.get('r'))
-    sigma = float(data.get('sigma'))
+    S = float(data.get("S"))  # Преобразуем значение из контекста в число
+    X = float(data.get("X"))
+    T = float(data.get("T"))
+    r = float(data.get("r"))
+    sigma = float(data.get("sigma"))
 
     # Печатаем данные перед началом расчета
     print(f"S = {S}, X = {X}, T = {T}, r = {r}, sigma = {sigma}")
@@ -136,14 +137,22 @@ async def process_sigma(message: Message, state: FSMContext) -> None:
         # Отправляем ответ пользователю
         await message.answer(f"Стоимость опциона по модели Блэка-Шоулза: {call_price}")
 
+
+def black_scholes_call(S, X, T, r, sigma):
+    d1 = (math.log(S / X) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    return S * norm.cdf(d1) - X * math.exp(-r * T) * norm.cdf(d2)
+
+
 async def main():
     bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
     dp = Dispatcher()
     dp.include_router(form_router)
 
-
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
     asyncio.run(main())
+    
