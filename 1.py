@@ -2,7 +2,6 @@ from ast import parse
 import decimal
 import hashlib
 import logging
-import random
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -17,7 +16,6 @@ from urllib import parse
 # Путь к вашим файлам
 AUDIO_FILE = 'start_grisha.opus'
 SASHA_AUDIO = 'sasha.opus'
-VIDEO_FILE = 'video.mp4'
 
 # Данные мерчанта Robokassa
 MERCHANT_LOGIN = "onepercent"
@@ -25,7 +23,8 @@ MERCHANT_PASSWORD_1 = "srbGBD6x4ZoTOl7pJL69"
 MERCHANT_PASSWORD_2 = "T6XAvZ94G8drrHOCeMx1"
 ROBOKASSA_URL = "https://auth.robokassa.ru/Merchant/Index.aspx"
 RETURN_URL = "https://t.me/OnlyOnePrecent_bot"
-PRICE = decimal.Decimal("2.00")
+PRICE = decimal.Decimal("1499.00")
+BOT_TOKEN = '7579057272:AAFn1jALhoGKIrXtB1y_4md3rM68upLdvz0'
 DESCRIPTION = "Подписка на 1%"
 number = 0
 
@@ -36,9 +35,6 @@ CHANNELS = {
     "1% чат общения": -1002435800153,
     "1% отчеты по ДЗ, чат-рехаб, медитации": -1002268923269
 }
-
-# Определяем состояния диалога
-EMAIL, PAYMENT = range(2)
 
 # Логирование
 logging.basicConfig(
@@ -54,14 +50,14 @@ def create_db():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS subscriptions (
                 user_id INTEGER PRIMARY KEY,
-                email TEXT NOT NULL,
+                number TEXT NOT NULL,
                 subscription_end_date TEXT NOT NULL
             )
         ''')
         conn.commit()
 
 # Функция для добавления или обновления подписки
-def add_or_update_subscription(user_id, email):
+def add_or_update_subscription(user_id, number):
     """Добавляет новую подписку или обновляет существующую"""
     with sqlite3.connect('subscribers.db') as conn:
         cursor = conn.cursor()
@@ -82,15 +78,15 @@ def add_or_update_subscription(user_id, email):
                 new_subscription_end_date = datetime.now() + timedelta(days=30)
 
             # Обновляем подписку в базе данных
-            cursor.execute('''UPDATE subscriptions SET email = ?, subscription_end_date = ? WHERE user_id = ?''',
-                           (email, new_subscription_end_date.strftime('%Y-%m-%d %H:%M:%S'), user_id))
+            cursor.execute('''UPDATE subscriptions SET number = ?, subscription_end_date = ? WHERE user_id = ?''',
+                           (number, new_subscription_end_date.strftime('%Y-%m-%d %H:%M:%S'), user_id))
             logger.info(f"Обновлена подписка для пользователя {user_id}. Новая дата окончания: {new_subscription_end_date}")
         else:
             # Если подписки нет, добавляем новую с датой окончания через 30 дней
             new_subscription_end_date = datetime.now() + timedelta(days=30)
-            cursor.execute('''INSERT INTO subscriptions (user_id, email, subscription_end_date) VALUES (?, ?, ?)''',
-                           (user_id, email, new_subscription_end_date.strftime('%Y-%m-%d %H:%M:%S')))
-            logger.info(f"Добавлена новая подписка для пользователя {user_id} с email {email}. Дата окончания: {new_subscription_end_date}")
+            cursor.execute('''INSERT INTO subscriptions (user_id, number, subscription_end_date) VALUES (?, ?, ?)''',
+                           (user_id, number, new_subscription_end_date.strftime('%Y-%m-%d %H:%M:%S')))
+            logger.info(f"Добавлена новая подписка для пользователя {user_id} с number {number}. Дата окончания: {new_subscription_end_date}")
 
 create_db()
 
@@ -142,17 +138,13 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Проверяем, есть ли пользователь в базе данных
     subscription_end_date = get_subscription_end_date(user_id)
-    if not subscription_end_date:
-        # Если пользователь не найден в БД (нет подписки), сразу показываем сообщение
-        message = "*Тебя нет в 1%\\.\\.\\.\n\nИсправь это ↷*"
 
-        # Создаем кнопку "Вступить в 1%"
+    if not subscription_end_date:
+        message = "*Тебя нет в 1%*\\.\\.\\.\n\n""Исправь это ↷"
         keyboard = [
             [InlineKeyboardButton("Вступить в 1%", callback_data='join_1_percent')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-
-        # Отправляем сообщение с кнопкой
         await update.message.reply_text(message, reply_markup=reply_markup, parse_mode="MarkdownV2")
         return  # Завершаем выполнение функции, т.к. подписки нет
 
@@ -219,9 +211,6 @@ def get_expiration_date(seconds=10) -> str:
     expiration_time = datetime.now(timezone.utc) + timedelta(seconds=seconds)
     return expiration_time.strftime('%Y-%m-%dT%H:%M:%S') + '.0000000+00:00'
 
-def generate_random_number() -> int:
-    return random.randint(1, 2147483647)
-
 def generate_payment_link(
     merchant_login: str,  # Логин продавца
     merchant_password_1: str,  # Первый пароль продавца
@@ -276,7 +265,7 @@ async def pay(update, context) -> None:
 
     merchant_login = "onepercent"
     merchant_password_1 = "srbGBD6x4ZoTOl7pJL69"
-    cost = decimal.Decimal("2.00")  # Сумма платежа
+    cost = decimal.Decimal(PRICE)  # Сумма платежа
     description = f"Подписка на 1% для {user_id}"  # Описание
 
     # Генерация срока действия счета (10 минут)
@@ -296,13 +285,17 @@ async def pay(update, context) -> None:
     # Создание клавиатуры с кнопками
     keyboard = [
         [InlineKeyboardButton("💳 Оплатить", url=payment_link)],
-        [InlineKeyboardButton("📜 Условия оплаты", callback_data='terms')]
+        [InlineKeyboardButton("Условия оплаты", url='https://telegra.ph/Platezhnye-usloviya-02-22')],
+        [InlineKeyboardButton("Описание продукта", url="https://telegra.ph/Opisanie-produkta-02-22")],
+        [InlineKeyboardButton("Оферта", url="https://telegra.ph/PUBLICHNAYA-OFERTA-02-22")]
     ]
 
     # Отправка сообщения с кнопками
     await update.callback_query.message.reply_text(
-        "💰 Доступ стоит 1499₽ на 30 дней.\n\n"
-        "После оплаты подождите немного, пока платеж обработается.",
+        "💰 Доступ стоит 1499₽ на 30 дней\\.\n\n"
+        "_Оплачивая подписку, ты соглашаешься с условиями_\\.\n\n"
+        ">После оплаты подожди немного, пока платеж в обработке\\.\\.\\.",
+        parse_mode="MarkdownV2",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -329,7 +322,7 @@ async def successful_payment(number, user_id):
         "*ВСЕ\\. ДОБРО ПОЖАЛОВАТЬ В 1%\\!*"
     )
 
-    bot = Bot(token="7510014005:AAHxbLaHcWlDEx95MkHsqc_y2mrX6NStYU4")  # Создайте объект бота
+    bot = Bot(token='7579057272:AAFn1jALhoGKIrXtB1y_4md3rM68upLdvz0')  # Создайте объект бота
     try:
         # Отправляем сообщение пользователю по его user_id
         await bot.send_message(chat_id=user_id, text=message, parse_mode="MarkdownV2")
@@ -338,7 +331,7 @@ async def successful_payment(number, user_id):
 
 async def generate_invite_links():
     """Генерирует одноразовые ссылки для всех каналов."""
-    bot = Bot(token='7510014005:AAHxbLaHcWlDEx95MkHsqc_y2mrX6NStYU4')  # Создаем объект бота
+    bot = Bot(token='7579057272:AAFn1jALhoGKIrXtB1y_4md3rM68upLdvz0')  # Создаем объект бота
     invite_links = {}
     expire_time = int(time.time()) + 600  # Срок действия 10 минут
 
@@ -355,23 +348,6 @@ async def generate_invite_links():
             print(f"Ошибка создания ссылки для {title}: {e}")
 
     return invite_links
-
-async def terms(update, context):
-    """Отправка сообщения с условиями и реквизитами."""
-    await update.callback_query.answer()  # Подтверждаем действие, чтобы не оставалось уведомлений
-    await update.callback_query.message.reply_text(
-        "📜 *Платежные условия:* \n\n"
-        "• *Контактные данные:* @sunsleamm \n\n"
-        "• *Правила оформления и сроки исполнения заказа:* Подписка активируется сразу после оплаты\\. \n\n"
-        "• *Оплата:* RUB, через ЮКасса/Робокасса\\. \n\n"
-        "• *Доставка:* Доступ к каналу открывается автоматически после подтверждения платежа\\. \n\n"
-        "• *Возврат и отказ от покупки:* Возврат средств не предусмотрен\\. \n\n"
-        "• *Реквизиты самозанятого:* \n\n"
-        "   • *ФИО:* Пантелеева Александра Алексеевна \n\n"
-        "   • *ИНН:* 638101172013 \n\n"
-        "• *Политика обработки персональных данных:* Ваши данные используются только для предоставления услуги и не передаются третьим лицам\\. \n",
-        parse_mode="MarkdownV2"
-    )
 
 async def button_handler(update, context):
     """Обрабатывает нажатие на кнопку."""
@@ -425,21 +401,25 @@ async def button_handler(update, context):
             await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard_original))
         
         elif query.data == 'what_to_expect':
-            # Меняем только нажатую кнопку
-            await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard_loading_1_percent))
-            
-            # Эмулируем процесс отправки видео
-            with open(VIDEO_FILE, 'rb') as video_file:
-                keyboard = [
-                    [InlineKeyboardButton("Вступить в 1%", callback_data='join_1_percent')]  # Кнопка вступления
-                ]
-                await query.message.reply_video(
-                    video_file, 
-                    caption="> Информация о 1%",  # Подпись к видео
-                    parse_mode="MarkdownV2",
-                    supports_streaming=True,  # Указание на поддержку стриминга
-                    reply_markup=InlineKeyboardMarkup(keyboard) 
+            try:
+                # Меняем только нажатую кнопку
+                await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard_loading_1_percent))
+                
+                # Отправляем видео с новой подписью
+                await context.bot.send_video(
+                    chat_id=query.message.chat.id,  # Чат, в который отправляем
+                    video='https://t.me/videoprogrev/2',  # URL видео из другого канала
+                    caption="Что тебя ждет в 1%?",  # Новая подпись
+                    parse_mode="MarkdownV2",  # Поддержка Markdown для форматирования
+                    reply_markup=InlineKeyboardMarkup([  # Кнопка для вступления
+                        [InlineKeyboardButton("Вступить в 1%", callback_data='join_1_percent')]
+                    ])
                 )
+            except Exception as e:
+                # Логируем ошибку
+                logging.error(f"Ошибка при обработке кнопки: {e}")
+                
+            # Возвращаем оригинальные кнопки
             await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard_original))
 
         elif query.data == 'join_1_percent':
@@ -457,17 +437,14 @@ async def button_handler(update, context):
                 "\\- Если уверен, что оплатил, отправь эл\\.почту, скрин оплаты или банковский чек ➙ **@sunsleamm**, разберемся\\.\n\n"
                 "📩 Для других вопросов пишите в поддержку *@sunsleamm*\\.",
                 parse_mode="MarkdownV2"
-            )
-
-        elif query.data == 'terms':
-            await terms(update, context)    
+            ) 
 
     except Exception as e:
         logger.error(f"Ошибка при обработке кнопки: {e}")
 
 def main() -> None:
     """Запуск бота"""
-    application = Application.builder().token("7515964016:AAED5g3x7broouikUsc7tfzPlRMBm4N5kbQ").build()
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # Обработчики команд
     application.add_handler(CommandHandler("start", start))
