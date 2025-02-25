@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import time
 from typing import Dict, Optional
 import urllib
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes
 )
@@ -27,7 +27,7 @@ MERCHANT_PASSWORD_2 = "T6XAvZ94G8drrHOCeMx1"
 ROBOKASSA_URL = "https://auth.robokassa.ru/Merchant/Index.aspx"
 RETURN_URL = "https://t.me/OnlyOnePrecent_bot"
 PRICE = decimal.Decimal("1499.00")
-BOT_TOKEN = '7579057272:AAFn1jALhoGKIrXtB1y_4md3rM68upLdvz0'
+BOT_TOKEN = '7510014005:AAHxbLaHcWlDEx95MkHsqc_y2mrX6NStYU4'
 DESCRIPTION = "Подписка на 1%"
 number = 0
 
@@ -318,7 +318,7 @@ async def pay(update, context) -> None:
 
     # Создание клавиатуры с кнопками
     keyboard = [
-        [InlineKeyboardButton("💳 Оплатить", url=payment_link)],
+        [InlineKeyboardButton("💳 Оплатить", web_app=WebAppInfo(url=payment_link))],
         [InlineKeyboardButton("Условия оплаты", url='https://telegra.ph/Platezhnye-usloviya-02-22')],
         [InlineKeyboardButton("Описание продукта", url="https://telegra.ph/Opisanie-produkta-02-22")],
         [InlineKeyboardButton("Оферта", url="https://telegra.ph/PUBLICHNAYA-OFERTA-02-22")]
