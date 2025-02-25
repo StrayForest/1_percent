@@ -1,11 +1,14 @@
 from ast import parse
 import decimal
 import hashlib
+import json
 import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import time
+from typing import Dict, Optional
+import urllib
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -191,38 +194,52 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(message, parse_mode="MarkdownV2")
 
-def calculate_signature(merchant_login: str, cost: decimal, number: int, merchant_password_1: str, additional_params: dict = None) -> str:
-    """Создание подписи MD5 с учетом дополнительных параметров."""
-    # Формирование базовой строки с обязательными параметрами
-    base_string = ':'.join([merchant_login, str(cost), str(number), merchant_password_1])
+def calculate_signature(
+    merchant_login: str,
+    cost: decimal.Decimal,
+    number: int,
+    receipt: dict,
+    merchant_password_1: str,
+    additional_params: Optional[Dict[str, str]] = None
+) -> str:
+    """Генерация подписи MD5 с учетом чека (Receipt) и дополнительных параметров (например, user_id)."""
+    
+    # Сериализуем чек в JSON
+    receipt_json = json.dumps(receipt, ensure_ascii=False)
+    
+    # URL-кодируем чек
+    encoded_receipt = urllib.parse.quote(receipt_json, safe='')
+
+    # Формируем базовую строку для подписи
+    base_string = f"{merchant_login}:{cost:.2f}:{number}:{encoded_receipt}:{merchant_password_1}"
 
     # Если есть дополнительные параметры, добавляем их
     if additional_params:
-        # Сортируем параметры по ключам и добавляем к строке
         sorted_params = sorted(additional_params.items())
         for key, value in sorted_params:
-            base_string += f':{key}={value}'
+            base_string += f":{key}={value}"
 
-    # Генерация подписи MD5
+    # Генерация MD5-хеш
     return hashlib.md5(base_string.encode()).hexdigest()
 
-def get_expiration_date(seconds=10) -> str:
+def get_expiration_date(seconds: int = 10) -> str:
     """Возвращает строку с датой истечения через заданное количество секунд в формате ISO 8601."""
     expiration_time = datetime.now(timezone.utc) + timedelta(seconds=seconds)
     return expiration_time.strftime('%Y-%m-%dT%H:%M:%S') + '.0000000+00:00'
 
 def generate_payment_link(
-    merchant_login: str,  # Логин продавца
-    merchant_password_1: str,  # Первый пароль продавца
-    cost: decimal,  # Сумма платежа
-    number: int,  # Номер заказа
-    description: str,  # Описание покупки
-    user_id: int,  # ID пользователя
-    is_test=0,  # Флаг тестирования
-    expiration_date=None,  # Срок действия счета
-    robokassa_payment_url='https://auth.robokassa.ru/Merchant/Index.aspx',  # URL Робокассы
+    merchant_login: str,
+    merchant_password_1: str,
+    cost: decimal.Decimal,
+    number: int,
+    description: str,
+    receipt: dict,
+    user_id: int,
+    expiration_date: Optional[str] = None,
+    robokassa_payment_url: str = ROBOKASSA_URL
 ) -> str:
     """Генерация ссылки для перенаправления клиента на оплату."""
+
     # Дополнительные параметры, включая user_id
     additional_params = {
         'Shp_user_id': user_id  # Передаем user_id как пользовательский параметр
@@ -233,6 +250,7 @@ def generate_payment_link(
         merchant_login,
         cost,
         number,
+        receipt,
         merchant_password_1,
         additional_params  # Передаем дополнительные параметры
     )
@@ -244,7 +262,8 @@ def generate_payment_link(
         'InvId': number,
         'Description': description,
         'SignatureValue': signature,
-        'IsTest': is_test
+        'IsTest': 0,  # Не в тестовом режиме
+        'Receipt': urllib.parse.quote(json.dumps(receipt, ensure_ascii=False), safe=''),
     }
 
     # Если передан expiration_date, добавляем его в параметры
@@ -256,17 +275,31 @@ def generate_payment_link(
         data[param] = value
 
     # Генерация ссылки
-    return f'{robokassa_payment_url}?{parse.urlencode(data)}'
+    return f'{robokassa_payment_url}?{urllib.parse.urlencode(data)}'
 
 async def pay(update, context) -> None:
     """Генерация ссылки на оплату и отправка пользователю."""
-    
+
     user_id = update.callback_query.from_user.id  # Получаем user_id пользователя
 
     merchant_login = "onepercent"
     merchant_password_1 = "srbGBD6x4ZoTOl7pJL69"
     cost = decimal.Decimal(PRICE)  # Сумма платежа
     description = f"Подписка на 1% для {user_id}"  # Описание
+
+    # Данные для фискализации
+    receipt_data = {
+        "items": [
+            {
+                "name": "Подписка 1%",
+                "quantity": 1,
+                "sum": float(PRICE),
+                "payment_method": "full_payment",
+                "payment_object": "service",
+                "tax": "none"
+            }
+        ]
+    }
 
     # Генерация срока действия счета (10 минут)
     expiration_date = get_expiration_date(seconds=10 * 60)
@@ -278,6 +311,7 @@ async def pay(update, context) -> None:
         cost=cost,
         number=number,
         description=description,
+        receipt=receipt_data,
         user_id=user_id,
         expiration_date=expiration_date  # Передаем срок действия счета
     )
