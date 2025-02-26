@@ -27,7 +27,7 @@ MERCHANT_PASSWORD_2 = "T6XAvZ94G8drrHOCeMx1"
 ROBOKASSA_URL = "https://auth.robokassa.ru/Merchant/Index.aspx"
 RETURN_URL = "https://t.me/OnlyOnePrecent_bot"
 PRICE = decimal.Decimal("1499.00")
-BOT_TOKEN = '7510014005:AAHxbLaHcWlDEx95MkHsqc_y2mrX6NStYU4'
+BOT_TOKEN = '7579057272:AAFn1jALhoGKIrXtB1y_4md3rM68upLdvz0'
 DESCRIPTION = "Подписка на 1%"
 number = 0
 
