@@ -12,7 +12,7 @@ import urllib
 from telegram import Bot, ChatMember, ChatMemberUpdated, Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.constants import ParseMode
 from telegram.ext import (
-    Application, ChatMemberHandler, CommandHandler, CallbackQueryHandler, ContextTypes
+    Application, CallbackContext, ChatMemberHandler, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 )
 from urllib import parse
 
@@ -39,6 +39,9 @@ CHANNELS = {
     "1% чат общения": -1002435800153,
     "1% отчеты по ДЗ, чат-рехаб, медитации": -1002268923269
 }
+
+pending_invites = {}
+ALLOWED_USER_IDS = [919584489, 568108547, 831275635]
 
 # Логирование
 logging.basicConfig(
@@ -71,27 +74,44 @@ def add_or_update_subscription(user_id, number):
         result = cursor.fetchone()
 
         if result:
-            # Если подписка существует, проверяем, активна ли она
-            old_end_date = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
+            subscription_end_date = result[0]
             
-            if old_end_date > datetime.now():
-                # Если подписка активна, прибавляем 30 дней
-                new_subscription_end_date = old_end_date + timedelta(days=30)
+            if subscription_end_date:
+                try:
+                    # Преобразуем строку с датой в datetime
+                    old_end_date = datetime.strptime(subscription_end_date, '%Y-%m-%d %H:%M:%S')
+                except ValueError as e:
+                    logger.error(f"Ошибка преобразования даты {subscription_end_date} для пользователя {user_id}: {e}")
+                    old_end_date = None
             else:
-                # Если подписка истекла, устанавливаем новую дату с текущего дня
-                new_subscription_end_date = datetime.now() + timedelta(days=30)
+                logger.warning(f"Дата окончания подписки пуста для пользователя {user_id}")
+                old_end_date = None
 
-            # Обновляем подписку в базе данных
-            cursor.execute('''UPDATE subscriptions SET number = ?, subscription_end_date = ? WHERE user_id = ?''',
-                           (number, new_subscription_end_date.strftime('%Y-%m-%d %H:%M:%S'), user_id))
-            logger.info(f"Обновлена подписка для пользователя {user_id}. Новая дата окончания: {new_subscription_end_date}")
+            if old_end_date:
+                # Если подписка существует и активна
+                if old_end_date > datetime.now():
+                    # Если подписка активна, прибавляем 30 дней
+                    new_subscription_end_date = old_end_date + timedelta(days=30)
+                else:
+                    # Если подписка истекла, устанавливаем новую дату с текущего дня
+                    new_subscription_end_date = datetime.now() + timedelta(days=30)
+
+                # Обновляем подписку в базе данных
+                cursor.execute('''UPDATE subscriptions SET number = ?, subscription_end_date = ? WHERE user_id = ?''',
+                               (number, new_subscription_end_date.strftime('%Y-%m-%d %H:%M:%S'), user_id))
+                logger.info(f"Обновлена подписка для пользователя {user_id}. Новая дата окончания: {new_subscription_end_date}")
+            else:
+                # Если дата окончания подписки некорректна, добавляем новую подписку
+                new_subscription_end_date = datetime.now() + timedelta(days=30)
+                cursor.execute('''UPDATE subscriptions SET number = ?, subscription_end_date = ? WHERE user_id = ?''',
+                               (number, new_subscription_end_date.strftime('%Y-%m-%d %H:%M:%S'), user_id))
+                logger.info(f"Невалидная дата подписки для пользователя {user_id}, установлена новая подписка с number {number}. Дата окончания: {new_subscription_end_date}")
         else:
             # Если подписки нет, добавляем новую с датой окончания через 30 дней
             new_subscription_end_date = datetime.now() + timedelta(days=30)
             cursor.execute('''INSERT INTO subscriptions (user_id, number, subscription_end_date) VALUES (?, ?, ?)''',
                            (user_id, number, new_subscription_end_date.strftime('%Y-%m-%d %H:%M:%S')))
             logger.info(f"Добавлена новая подписка для пользователя {user_id} с number {number}. Дата окончания: {new_subscription_end_date}")
-
 create_db()
 
 # Функция для проверки даты окончания подписки
@@ -199,6 +219,19 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += "✅ *Ты подписан на все нужные каналы\\!*"
 
     await update.message.reply_text(message, parse_mode="MarkdownV2")
+#/
+async def invite(update: Update, context: CallbackContext) -> None:
+    """Обработчик команды /invite"""
+    user_id = update.message.from_user.id
+
+    # Проверяем, является ли пользователь одним из разрешенных
+    if user_id not in ALLOWED_USER_IDS:
+        return
+
+    pending_invites.clear()
+    # Если пользователь разрешен, выполняем основную логику
+    pending_invites[user_id] = True  # Отмечаем, что ждём пересланное сообщение
+    await update.message.reply_text("Перешли мне сообщение от пользователя, которого надо добавить.")
 
 def calculate_signature(
     merchant_login: str,
@@ -483,12 +516,37 @@ async def button_handler(update, context):
         logger.error(f"Ошибка при обработке кнопки: {e}")
 
 def check_subscription(user_id: int) -> bool:
-    """Проверяем, есть ли пользователь в базе данных подписчиков."""
+    """Проверяем, есть ли у пользователя активная подписка (проверяем дату окончания подписки)."""
     with sqlite3.connect('subscribers.db') as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM subscriptions WHERE user_id = ?', (user_id,))
+        
+        # Извлекаем дату окончания подписки для пользователя
+        cursor.execute('SELECT subscription_end_date FROM subscriptions WHERE user_id = ?', (user_id,))
         result = cursor.fetchone()
-        return result is not None
+        
+        if result is None or result[0] is None or result[0].strip() == "":
+            # Если пользователя нет в базе данных или дата окончания подписки пустая,
+            # считаем, что подписки нет
+            return False
+        
+        # Дата окончания подписки
+        subscription_end_date = result[0]
+        
+        # Преобразуем строку даты в объект datetime
+        try:
+            subscription_end_date = datetime.strptime(subscription_end_date, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            # Если дата не соответствует формату, считаем, что подписки нет
+            return False
+        
+        # Получаем сегодняшнюю дату минус 1 день
+        current_date_minus_1 = datetime.now() - timedelta(days=1)
+        
+        # Проверяем, если сегодняшняя дата минус 1 день больше даты окончания подписки
+        if current_date_minus_1 > subscription_end_date:
+            return False  # Подписка закончилась, пользователь должен быть заблокирован
+        
+        return True  # Подписка еще активна
 
 def extract_status_change(chat_member_update: ChatMemberUpdated) -> Optional[tuple[bool, bool]]:
     """Takes a ChatMemberUpdated instance and extracts whether the 'old_chat_member' was a member
@@ -528,11 +586,41 @@ async def greet_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
     logger.info(f"Новый пользователь с ID: {new_user_id}")
 
     if not was_member and is_member:
-        # Проверяем, есть ли пользователь в базе данных
+        # Проверяем, есть ли пользователь в базе данных и активна ли его подписка
         if not check_subscription(new_user_id):
-            # Если его нет в базе, баним
+            # Если подписка не активна или пользователя нет в базе, баним
             await update.effective_chat.ban_member(new_user_id)
-            logger.info(f"Пользователь с ID {new_user_id} заблокирован, так как его нет в базе данных.")
+            logger.info(f"Пользователь с ID {new_user_id} заблокирован, так как его подписка истекла или его нет в базе данных.")
+
+async def get_forwarded_id(update: Update, context: CallbackContext) -> None:
+    """Обработчик пересланного сообщения"""
+    
+    user_id = update.message.from_user.id
+
+    # Проверяем, ожидается ли пересланное сообщение от этого пользователя
+    if user_id not in pending_invites:
+        return  # Прерываем, если команда не была вызвана или нет прав
+
+    # Пытаемся извлечь forward_from из api_kwargs
+    forward_from = update.message.api_kwargs.get('forward_from', None)
+    forward_sender_name = getattr(update.message, 'forward_sender_name', None)
+    pending_invites.clear()
+    
+    # Проверяем наличие forward_from
+    if forward_from:
+        user = forward_from
+        forwarded_user_id = user['id']
+        # Вызываем вашу функцию
+        await successful_payment(0, forwarded_user_id)
+        
+        await update.message.reply_text("✅ Пользователь успешно добавлен на 30 дней!")
+    
+    # Проверка, если это сообщение из канала или группы
+    elif forward_sender_name:
+        await update.message.reply_text("⚠️ Сообщение переслано из канала или группы. ID отправителя недоступен.")
+    
+    else:
+        await update.message.reply_text("⚠️ Не могу определить ID отправителя. Возможно, сообщение не переслано.")
 
 def main() -> None:
     """Запуск бота"""
@@ -541,8 +629,10 @@ def main() -> None:
     # Обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("subscribe", subscribe))
+    application.add_handler(CommandHandler("invite", invite))
     
     application.add_handler(ChatMemberHandler(greet_chat_members, ChatMemberHandler.CHAT_MEMBER))
+    application.add_handler(MessageHandler(filters.FORWARDED, get_forwarded_id))
 
     # Обработчик для кнопок
     application.add_handler(CallbackQueryHandler(button_handler))
