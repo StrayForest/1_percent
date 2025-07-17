@@ -22,14 +22,14 @@ AUDIO_FILE = 'start_grisha.opus'
 SASHA_AUDIO = 'sasha.opus'
 
 # Данные мерчанта Robokassa
-MERCHANT_LOGIN = "onepercent"
-MERCHANT_PASSWORD_1 = "srbGBD6x4ZoTOl7pJL69"
-MERCHANT_PASSWORD_2 = "T6XAvZ94G8drrHOCeMx1"
-ROBOKASSA_URL = "https://auth.robokassa.ru/Merchant/Index.aspx"
-RETURN_URL = "https://t.me/OnlyOnePrecent_bot"
+MERCHANT_LOGIN = ""
+MERCHANT_PASSWORD_1 = ""
+MERCHANT_PASSWORD_2 = ""
+ROBOKASSA_URL = ""
+RETURN_URL = ""
 PRICE = decimal.Decimal("1499.00")
-BOT_TOKEN = '7579057272:AAFn1jALhoGKIrXtB1y_4md3rM68upLdvz0'
-DESCRIPTION = "Подписка на 1%"
+BOT_TOKEN = ''
+DESCRIPTION = ""
 number = 0
 
 # IDs каналов
