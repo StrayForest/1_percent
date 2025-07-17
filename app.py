@@ -7,7 +7,7 @@ from tg_bot import successful_payment
 app = FastAPI()
 
 # Константы
-MERCHANT_PASSWORD_2 = "T6XAvZ94G8drrHOCeMx1"  # Замени на свой пароль #2
+MERCHANT_PASSWORD_2 = ""  # Замени на свой пароль #2
 
 def calculate_signature(*args) -> str:
     """Создаёт MD5 подпись для запроса."""
